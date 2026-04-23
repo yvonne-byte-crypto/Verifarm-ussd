@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: verifarm-ussd
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SOLANA_RPC_URL
+        value: https://api.devnet.solana.com
+      - key: AT_API_KEY
+        sync: false        # set in Render dashboard
+      - key: AT_USERNAME
+        sync: false
+      - key: AT_SENDER_ID
+        value: VeriFarm
+      - key: DATABASE_URL
+        fromDatabase:
+          name: verifarm-ussd-db
+          property: connectionString
+
+databases:
+  - name: verifarm-ussd-db
+    databaseName: verifarm_ussd
+    user: verifarm
+    plan: free
