@@ -51,33 +51,30 @@ export async function ussdHandler(req: Request, res: Response): Promise<void> {
 
 async function route(phone: string, text: string, sessionId: string): Promise<string> {
   const farmer = await getFarmerByPhone(phone);
-  const isNew  = !farmer?.preferred_language;
   const parts  = text === '' ? [] : text.split('*');
 
-  // First request in session — record whether a lang step will be needed
-  let hadLangStep = await getSessionLangStep(sessionId);
+  // Every session starts with a language selection step
+  const hadLangStep = await getSessionLangStep(sessionId);
   if (hadLangStep === null) {
-    hadLangStep = isNew;
-    await createSession(sessionId, phone, isNew);
+    await createSession(sessionId, phone, true);
   }
 
-  // ── New farmer on very first dial ─────────────────────────────────────
-  if (isNew && parts.length === 0) {
+  // ── Language selection on every fresh dial ────────────────────────────
+  if (parts.length === 0) {
     return con(t('en').welcomeNew);
   }
 
-  if (isNew && parts.length === 1) {
+  if (parts.length === 1) {
     const langChoice: Lang = parts[0] === '2' ? 'sw' : 'en';
     await upsertFarmer(phone, { preferred_language: langChoice });
     return con(t(langChoice).mainMenu);
   }
 
-  // ── Determine language ────────────────────────────────────────────────
-  const lang: Lang = (farmer?.preferred_language as Lang)
-    ?? (parts[0] === '2' ? 'sw' : 'en');
+  // ── Determine language from this session's first choice ───────────────
+  const lang: Lang = parts[0] === '2' ? 'sw' : 'en';
 
-  // If this session started with a language selection step, strip it off
-  const menuParts = hadLangStep ? parts.slice(1) : parts;
+  // Strip the language selection step for menu routing
+  const menuParts = parts.slice(1);
 
   if (menuParts.length === 0) return con(t(lang).mainMenu);
 
