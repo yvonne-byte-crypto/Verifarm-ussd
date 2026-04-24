@@ -9,7 +9,7 @@
 ![Database](https://img.shields.io/badge/PostgreSQL-18-blue)
 ![Gateway](https://img.shields.io/badge/Africa's%20Talking-USSD-orange)
 ![Deployed](https://img.shields.io/badge/Render-Live-brightgreen)
-![Tests](https://img.shields.io/badge/Anchor%20Tests-36%20Passing-brightgreen)
+![Tests](https://img.shields.io/badge/Anchor%20Tests-37%20Passing-brightgreen)
 
 ---
 
