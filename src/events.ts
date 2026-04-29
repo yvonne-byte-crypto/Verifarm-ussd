@@ -6,6 +6,8 @@ export interface LiveEvent {
   amount?:   number;
   reference?: string;
   score?:    number;
+  lender?:   string;
+  method?:   string;
   lang:      string;
   ts:        string;
 }

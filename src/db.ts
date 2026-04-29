@@ -130,6 +130,7 @@ export interface LoanApplication {
   reference: string;
   wallet_address: string | null;
   tx_signature: string | null;
+  notes: string | null;
   created_at: Date;
 }
 
@@ -171,13 +172,20 @@ export async function upsertFarmer(
 export async function createLoanApplication(
   phone: string,
   amount: number,
-  walletAddress?: string
+  walletAddress?: string,
+  meta?: {
+    lenderName?: string;
+    cropType?: string;
+    farmSize?: string;
+    livestock?: string;
+  },
 ): Promise<string> {
-  const ref = `VF-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+  const ref   = `VF-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+  const notes = meta ? JSON.stringify(meta) : null;
   await pool.query(
-    `INSERT INTO loan_applications (phone_number, amount, reference, wallet_address)
-     VALUES ($1, $2, $3, $4)`,
-    [normalisePhone(phone), amount, ref, walletAddress ?? null]
+    `INSERT INTO loan_applications (phone_number, amount, reference, wallet_address, notes)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [normalisePhone(phone), amount, ref, walletAddress ?? null, notes]
   );
   return ref;
 }
