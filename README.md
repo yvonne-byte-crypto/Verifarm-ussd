@@ -88,7 +88,13 @@ SSE broadcasts to lender dashboard
         ↓
 Lender sees activity in real time
 ```
+## 📱 Live Demo — Africa's Talking Simulator
 
+![VeriFarm USSD Flow](ussd-demo.png)
+
+USSD server connected to Africa's Talking sandbox.
+Farmers navigate loan application, lender selection,
+and repayment flows via any basic phone.
 ---
 
 ## 🤖 Oracle Webhook
