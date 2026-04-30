@@ -57,8 +57,30 @@ export async function initDb(): Promise<void> {
       had_lang_step BOOLEAN      DEFAULT FALSE,
       created_at    TIMESTAMPTZ  DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS consents (
+      id           SERIAL       PRIMARY KEY,
+      phone_number VARCHAR(20)  NOT NULL,
+      session_id   VARCHAR(100),
+      agreed       BOOLEAN      NOT NULL,
+      consented_at TIMESTAMPTZ  DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_consent_phone ON consents(phone_number);
   `);
   console.log('Database ready');
+}
+
+export async function logConsent(
+  phone: string,
+  sessionId: string,
+  agreed: boolean,
+): Promise<void> {
+  await pool.query(
+    `INSERT INTO consents (phone_number, session_id, agreed)
+     VALUES ($1, $2, $3)`,
+    [normalisePhone(phone), sessionId, agreed],
+  );
 }
 
 export async function getSessionLangStep(sessionId: string): Promise<boolean | null> {

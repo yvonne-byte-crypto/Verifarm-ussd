@@ -21,6 +21,12 @@ const strings = {
       'VeriFarm - Main Menu\n\n1. Apply for Loan\n2. My Loans & Balance\n3. Repay Loan\n4. Check Status\n5. Why My Amount?\n6. Improve My Score\n7. Help & FAQ\n0. About VeriFarm',
     backOption: '0. Back',
 
+    // ── Consent screen ────────────────────────────────────────────────────
+    consentScreen:
+      'Data Consent\n\nVeriFarm will collect your farm size, livestock count and GPS location to assess your loan eligibility.\n\nThis data is stored securely on the Solana blockchain and shared only with your chosen lender.\n\nReply:\n1. I agree — continue\n2. Cancel',
+    consentDeclined:
+      'Consent declined.\n\nYour data will not be collected. Dial *123# if you change your mind.',
+
     // ── Apply — Step 1: Farm Size ──────────────────────────────────────────
     applyFarmSize:
       'Apply - Step 1 of 5\nFarm size (acres):\n\n1. 1-3 acres\n2. 4-6 acres\n3. 7-15 acres\n4. 16+ acres\n\n0. Back to Menu',
@@ -173,6 +179,11 @@ const strings = {
     mainMenu:
       'VeriFarm - Menyu Kuu\n\n1. Omba Mkopo\n2. Mikopo Yangu\n3. Lipa Mkopo\n4. Angalia Hali\n5. Kwa Nini Kiasi Hiki?\n6. Boresha Alama\n7. Msaada & Maswali\n0. Kuhusu VeriFarm',
     backOption: '0. Rudi',
+
+    consentScreen:
+      'Idhini ya Data\n\nVeriFarm itakusanya ukubwa wa shamba lako, idadi ya mifugo na mahali pa GPS ili kutathmini ustahiki wa mkopo wako.\n\nData hii inahifadhiwa salama kwenye blockchain ya Solana na kushirikiwa na mkopeshaji wako tu.\n\nJibu:\n1. Nakubali — endelea\n2. Ghairi',
+    consentDeclined:
+      'Idhini imekataliwa.\n\nData yako haitakusanywa. Piga *123# ukibadilisha nia yako.',
 
     applyFarmSize:
       'Omba - Hatua 1 ya 5\nUkubwa wa shamba (eka):\n\n1. eka 1-3\n2. eka 4-6\n3. eka 7-15\n4. eka 16+\n\n0. Rudi Menyu',

@@ -8,6 +8,7 @@ import {
   getAllLoans,
   getSessionLangStep,
   createSession,
+  logConsent,
   Farmer,
   LoanApplication,
 } from './db';
@@ -120,7 +121,7 @@ async function route(phone: string, text: string, sessionId: string): Promise<st
 
   if (menuParts.length === 0) return con(t(lang).mainMenu);
 
-  return mainFlow(phone, lang, menuParts, farmer);
+  return mainFlow(phone, lang, menuParts, farmer, sessionId);
 }
 
 // ── Main menu dispatcher ───────────────────────────────────────────────────
@@ -130,11 +131,12 @@ async function mainFlow(
   lang: Lang,
   parts: string[],
   farmer: Farmer | null,
+  sessionId: string,
 ): Promise<string> {
   const [choice, ...rest] = parts;
 
   switch (choice) {
-    case '1': return flowApplyLoan(phone, lang, rest, farmer);
+    case '1': return flowApplyLoan(phone, lang, rest, farmer, sessionId);
     case '2': return flowMyLoans(phone, lang, rest);
     case '3': return flowRepayLoan(phone, lang, rest);
     case '4': return flowCheckStatus(phone, lang, farmer);
@@ -148,42 +150,64 @@ async function mainFlow(
 
 // ── Flow 1: Apply for Loan ─────────────────────────────────────────────────
 //
-// steps[0] = farmSize  (1-4)          Step 1
-// steps[1] = cropType  (1-5)          Step 2
-// steps[2] = livestock (1-4)          Step 3
-// steps[3] = activeLoan (1=yes, 2=no) Step 4
-// steps[4] = lender (1-5)            Step 5
-// steps[5] = confirm (1=yes, 2=cancel)
+// steps[0] = consent   (1=agree, 2=decline) ← NEW gate
+// steps[1] = farmSize  (1-4)
+// steps[2] = cropType  (1-5)
+// steps[3] = livestock (1-4)
+// steps[4] = activeLoan (1=yes, 2=no)
+// steps[5] = lender (1-5)
+// steps[6] = confirm (1=yes, 2=cancel)
 
 async function flowApplyLoan(
   phone: string,
   lang: Lang,
   steps: string[],
   farmer: Farmer | null,
+  sessionId: string,
 ): Promise<string> {
   const i18n = t(lang);
 
+  // ── Consent gate ───────────────────────────────────────────────────────
+  if (steps.length === 0) return con(i18n.consentScreen);
+
+  const consent = steps[0];
+  if (consent === '2') {
+    // Log declined consent and exit
+    await logConsent(phone, sessionId, false);
+    return end(i18n.consentDeclined);
+  }
+  if (consent !== '1') return con(i18n.consentScreen);
+
+  // Log accepted consent (only on the step immediately after agreement,
+  // i.e. steps.length === 1, to avoid duplicate rows on back-navigation)
+  if (steps.length === 1) {
+    await logConsent(phone, sessionId, true);
+  }
+
+  // Remaining steps after consent
+  const applySteps = steps.slice(1);
+
   // Step 1 — farm size
-  if (steps.length === 0) return con(i18n.applyFarmSize);
-  const farmSize = steps[0];
+  if (applySteps.length === 0) return con(i18n.applyFarmSize);
+  const farmSize = applySteps[0];
   if (farmSize === '0') return con(i18n.mainMenu);
   if (!['1','2','3','4'].includes(farmSize)) return con(i18n.applyFarmSize);
 
   // Step 2 — crop type
-  if (steps.length === 1) return con(i18n.applyCrop);
-  const cropType = steps[1];
+  if (applySteps.length === 1) return con(i18n.applyCrop);
+  const cropType = applySteps[1];
   if (cropType === '0') return con(i18n.applyFarmSize);
   if (!['1','2','3','4','5'].includes(cropType)) return con(i18n.applyCrop);
 
   // Step 3 — livestock
-  if (steps.length === 2) return con(i18n.applyLivestock);
-  const livestock = steps[2];
+  if (applySteps.length === 2) return con(i18n.applyLivestock);
+  const livestock = applySteps[2];
   if (livestock === '0') return con(i18n.applyCrop);
   if (!['1','2','3','4'].includes(livestock)) return con(i18n.applyLivestock);
 
   // Step 4 — active loan
-  if (steps.length === 3) return con(i18n.applyActiveLoan);
-  const activeLoan = steps[3];
+  if (applySteps.length === 3) return con(i18n.applyActiveLoan);
+  const activeLoan = applySteps[3];
   if (activeLoan === '0') return con(i18n.applyLivestock);
   if (!['1','2'].includes(activeLoan)) return con(i18n.applyActiveLoan);
 
@@ -192,18 +216,18 @@ async function flowApplyLoan(
     const existingLoan = await getLatestLoan(phone);
     if (existingLoan && existingLoan.status !== 'repaid') {
       const balance = existingLoan.amount;
-      if (steps.length === 4) {
+      if (applySteps.length === 4) {
         return con(i18n.hasActiveLoan(fmt(balance), existingLoan.reference));
       }
       // sub-choice: 1=repay, 2=back
-      if (steps[4] === '1') return flowRepayLoan(phone, lang, []);
+      if (applySteps[4] === '1') return flowRepayLoan(phone, lang, []);
       return con(i18n.mainMenu);
     }
   }
 
   // Step 5 — choose lender
-  if (steps.length === 4) return con(i18n.applyLender(i18n.lenderList()));
-  const lenderChoice = steps[4];
+  if (applySteps.length === 4) return con(i18n.applyLender(i18n.lenderList()));
+  const lenderChoice = applySteps[4];
   if (lenderChoice === '0') return con(i18n.applyActiveLoan);
   const lenderIdx = parseInt(lenderChoice, 10) - 1;
   if (isNaN(lenderIdx) || lenderIdx < 0 || lenderIdx >= LENDERS.length) {
@@ -215,9 +239,9 @@ async function flowApplyLoan(
   const amount    = calcLoanAmount(farmSize, livestock, activeLoan);
   const formatted = fmt(amount);
 
-  if (steps.length === 5) return con(i18n.confirmLoan(formatted, lenderName));
+  if (applySteps.length === 5) return con(i18n.confirmLoan(formatted, lenderName));
 
-  const confirm = steps[5];
+  const confirm = applySteps[5];
   if (confirm === '0') return con(i18n.applyLender(i18n.lenderList()));
   if (confirm === '2') return end(i18n.loanCancelled);
   if (confirm !== '1') return con(i18n.confirmLoan(formatted, lenderName));
