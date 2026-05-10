@@ -1,8 +1,8 @@
 import { Response } from 'express';
 
 export interface LiveEvent {
-  type:      'loan_application' | 'repayment' | 'score_update';
-  phone:     string;   // masked: +255712***678
+  type:      'loan_application' | 'repayment' | 'repayment_confirmed' | 'score_update';
+  phone?:    string;   // masked: +255712***678 (omitted for server-side events)
   amount?:   number;
   reference?: string;
   score?:    number;

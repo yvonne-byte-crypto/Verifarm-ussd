@@ -15,7 +15,7 @@ import {
 import { t, Lang, STATUS_LABELS, LENDERS } from './i18n';
 import { sendSms } from './sms';
 import { triggerMobileCheckout } from './payments';
-import { getLoanStatusFromChain, getScoreFromChain } from './solana';
+import { getLoanStatusFromChain, getScoreFromChain, submitRiskScoreOnChain } from './solana';
 import { broadcast, maskPhone } from './events';
 
 // ── Response helpers ───────────────────────────────────────────────────────
@@ -250,10 +250,18 @@ async function flowApplyLoan(
   const wallet = farmer?.wallet_address ?? undefined;
   const ref    = await createLoanApplication(phone, amount, wallet, {
     lenderName,
-    cropType:  cropLabel(cropType),
-    farmSize:  farmSizeLabel(farmSize),
-    livestock: livestockLabel(livestock),
+    cropType:       cropLabel(cropType),
+    farmSize:       farmSizeLabel(farmSize),
+    livestock:      livestockLabel(livestock),
+    farmSizeChoice: farmSize,
+    livestockChoice: livestock,
   });
+
+  // Push estimated risk score on-chain if farmer's wallet is linked
+  if (wallet) {
+    const score = estimateScore(farmSize, livestock);
+    submitRiskScoreOnChain(wallet, score).catch(console.error);
+  }
 
   broadcast({
     type: 'loan_application',

@@ -200,6 +200,8 @@ export async function createLoanApplication(
     cropType?: string;
     farmSize?: string;
     livestock?: string;
+    farmSizeChoice?: string;
+    livestockChoice?: string;
   },
 ): Promise<string> {
   const ref   = `VF-${Date.now().toString(36).toUpperCase().slice(-6)}`;
@@ -230,6 +232,20 @@ export async function getAllLoans(phone: string): Promise<LoanApplication[]> {
     [normalisePhone(phone)]
   );
   return rows;
+}
+
+export async function updateLoanStatus(reference: string, status: string): Promise<void> {
+  await pool.query(
+    `UPDATE loan_applications SET status = $1, updated_at = NOW() WHERE reference = $2`,
+    [status, reference],
+  );
+}
+
+export async function updateRepaymentStatus(transactionId: string, status: string): Promise<void> {
+  await pool.query(
+    `UPDATE repayments SET status = $1 WHERE transaction_id = $2`,
+    [status, transactionId],
+  );
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

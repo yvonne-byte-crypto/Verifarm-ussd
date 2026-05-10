@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import { ussdHandler } from './ussd';
-import { initDb, upsertFarmer, getFarmerByPhone } from './db';
+import { initDb, upsertFarmer, getFarmerByPhone, getLatestLoan, updateLoanStatus, updateRepaymentStatus } from './db';
 import { submitRiskScoreOnChain } from './solana';
 import { addClient, removeClient, broadcast, maskPhone } from './events';
 
@@ -49,10 +49,63 @@ app.post('/sms/delivery', (req, res) => {
 
 // ── AT Payments callback (M-Pesa confirmation) ─────────────────────────────
 
-app.post('/payments/callback', (req, res) => {
+app.post('/payments/callback', async (req: Request, res: Response) => {
   console.log('[Payment Callback]', req.body);
-  // TODO: update repayment status in DB and trigger on-chain repay_loan
+
+  // Africa's Talking sends: transactionId, status, phoneNumber, value, metadata.*
+  const { transactionId, status } = req.body as {
+    transactionId?: string;
+    status?: string;
+  };
+
+  // metadata fields arrive flat as metadata_ref, metadata_type
+  const loanRef = (req.body as Record<string, string>)['metadata_ref'] ?? null;
+
+  if (!transactionId) {
+    res.sendStatus(200);
+    return;
+  }
+
+  const confirmed = (status ?? '').toLowerCase() === 'success';
+  const txStatus  = confirmed ? 'confirmed' : 'failed';
+
+  await updateRepaymentStatus(transactionId, txStatus);
+
+  if (confirmed && loanRef) {
+    await updateLoanStatus(loanRef, 'repaid');
+    broadcast({
+      type:      'repayment_confirmed',
+      reference: loanRef,
+      lang:      'en',
+      ts:        new Date().toISOString(),
+    });
+    console.log(`[Payment] ${loanRef} marked repaid — tx: ${transactionId}`);
+  }
+
   res.sendStatus(200);
+});
+
+// ── Loan application lookup (for lender dashboard) ─────────────────────────
+
+app.get('/api/applications/by-phone/:phone', async (req: Request, res: Response) => {
+  const phone = req.params.phone;
+  if (!phone) { res.status(400).json({ error: 'phone required' }); return; }
+
+  const loan = await getLatestLoan(phone).catch(() => null);
+  if (!loan) { res.json({ lenderName: null, reference: null, status: null, amount: null }); return; }
+
+  let lenderName: string | null = null;
+  try {
+    const notes = JSON.parse(loan.notes ?? '{}');
+    lenderName = notes.lenderName ?? null;
+  } catch {}
+
+  res.json({
+    lenderName,
+    reference: loan.reference,
+    status:    loan.status,
+    amount:    loan.amount,
+  });
 });
 
 // ── SSE live feed (Feature 3) ──────────────────────────────────────────────
@@ -159,9 +212,11 @@ initDb()
   .then(() => {
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`VeriFarm USSD server :${PORT}`);
-      console.log(`  POST /ussd          — AT USSD callback`);
-      console.log(`  GET  /events        — SSE live feed`);
-      console.log(`  POST /oracle/score  — AI score webhook`);
+      console.log(`  POST /ussd                          — AT USSD callback`);
+      console.log(`  GET  /events                        — SSE live feed`);
+      console.log(`  POST /oracle/score                  — AI score webhook`);
+      console.log(`  POST /payments/callback             — AT M-Pesa webhook`);
+      console.log(`  GET  /api/applications/by-phone/:p  — lender dashboard lookup`);
       console.log(`  SMS  mode           : ${process.env.AT_API_KEY === 'sandbox' ? 'sandbox' : 'live'}`);
     });
 
