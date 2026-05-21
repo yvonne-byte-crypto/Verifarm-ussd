@@ -17,9 +17,16 @@ export async function initDb(): Promise<void> {
       preferred_language CHAR(2),
       ai_score           INTEGER     DEFAULT 0,
       loan_stage         INTEGER     DEFAULT 1,
+      wallet_secret_b58  VARCHAR(128),
+      chain_register_sig VARCHAR(100),
       created_at         TIMESTAMPTZ DEFAULT NOW(),
       updated_at         TIMESTAMPTZ DEFAULT NOW()
     );
+
+    -- Safe migrations for existing deployments
+    ALTER TABLE farmers
+      ADD COLUMN IF NOT EXISTS wallet_secret_b58  VARCHAR(128),
+      ADD COLUMN IF NOT EXISTS chain_register_sig VARCHAR(100);
 
     CREATE TABLE IF NOT EXISTS loan_applications (
       id             SERIAL PRIMARY KEY,
@@ -141,6 +148,8 @@ export interface Farmer {
   preferred_language: string | null;
   ai_score: number;
   loan_stage: number;
+  wallet_secret_b58: string | null;
+  chain_register_sig: string | null;
 }
 
 export interface LoanApplication {
@@ -238,6 +247,40 @@ export async function updateLoanStatus(reference: string, status: string): Promi
   await pool.query(
     `UPDATE loan_applications SET status = $1, updated_at = NOW() WHERE reference = $2`,
     [status, reference],
+  );
+}
+
+/**
+ * Persist on-chain registration data for a USSD farmer.
+ * Sets wallet_address, the custodial secret key, and the registerFarmer tx sig.
+ */
+export async function saveFarmerChainData(
+  phone: string,
+  pubkey: string,
+  secretB58: string,
+  registerSig: string,
+): Promise<void> {
+  await pool.query(
+    `UPDATE farmers
+     SET wallet_address     = $2,
+         wallet_secret_b58  = $3,
+         chain_register_sig = $4,
+         updated_at         = NOW()
+     WHERE phone_number = $1`,
+    [normalisePhone(phone), pubkey, secretB58, registerSig],
+  );
+}
+
+/**
+ * Store the submitRiskScore transaction signature against a loan application.
+ * Uses the loan_applications.tx_signature column.
+ */
+export async function saveLoanScoreSig(reference: string, txSig: string): Promise<void> {
+  await pool.query(
+    `UPDATE loan_applications
+     SET tx_signature = $1, updated_at = NOW()
+     WHERE reference  = $2`,
+    [txSig, reference],
   );
 }
 

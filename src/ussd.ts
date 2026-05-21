@@ -9,13 +9,20 @@ import {
   getSessionLangStep,
   createSession,
   logConsent,
+  saveFarmerChainData,
+  saveLoanScoreSig,
   Farmer,
   LoanApplication,
 } from './db';
 import { t, Lang, STATUS_LABELS, LENDERS } from './i18n';
 import { sendSms } from './sms';
 import { triggerMobileCheckout } from './payments';
-import { getLoanStatusFromChain, getScoreFromChain, submitRiskScoreOnChain } from './solana';
+import {
+  getLoanStatusFromChain,
+  getScoreFromChain,
+  registerFarmerOnChain,
+  submitRiskScoreOnChain,
+} from './solana';
 import { broadcast, maskPhone } from './events';
 
 // ── Response helpers ───────────────────────────────────────────────────────
@@ -148,6 +155,59 @@ async function mainFlow(
   }
 }
 
+// ── On-chain pipeline (called async after loan record is created) ──────────
+//
+// registerAndScore handles both paths:
+//  A) Farmer has no wallet yet → registerFarmerOnChain (generates custodial
+//     keypair, funds it from oracle, sends combined fund+register tx) then
+//     saves pubkey/secret/sig to farmers table.
+//  B) Farmer already has a wallet (own or previously generated) → skip register.
+//
+// After step A or B, submitRiskScoreOnChain is called and the sig is stored
+// in loan_applications.tx_signature so lenders can verify it on-chain.
+
+async function registerAndScore(opts: {
+  phone:     string;
+  farmer:    Farmer | null;
+  farmSize:  string;
+  livestock: string;
+  ref:       string;        // loan application reference for sig logging
+}): Promise<void> {
+  const { phone, farmer, farmSize, livestock, ref } = opts;
+
+  let walletAddress = farmer?.wallet_address ?? null;
+
+  // ── Step A: register on-chain if no wallet exists yet ─────────────────
+  if (!walletAddress) {
+    const fullName = farmer?.full_name ?? `USSD Farmer ${phone.slice(-4)}`;
+    const result   = await registerFarmerOnChain({ phone, fullName });
+
+    if (result) {
+      walletAddress = result.pubkey;
+      // Persist the new custodial identity alongside the register tx sig
+      await saveFarmerChainData(phone, result.pubkey, result.secretB58, result.sig);
+      console.log(`[chain] Farmer registered  phone=***${phone.slice(-4)} pubkey=${result.pubkey.slice(0, 8)}…`);
+    }
+  } else {
+    console.log(`[chain] Farmer already has wallet ${walletAddress.slice(0, 8)}… — skipping registerFarmer`);
+  }
+
+  // ── Step B: submit estimated risk score ───────────────────────────────
+  if (!walletAddress) {
+    console.warn('[chain] No wallet address after registration attempt — skipping submitRiskScore');
+    return;
+  }
+
+  const score = estimateScore(farmSize, livestock);
+  const sig   = await submitRiskScoreOnChain(walletAddress, score);
+
+  if (sig) {
+    // Log the score tx sig against this loan application
+    await saveLoanScoreSig(ref, sig);
+    console.log(`[chain] Score ${score} submitted  ref=${ref} sig=${sig}`);
+  }
+}
+
 // ── Flow 1: Apply for Loan ─────────────────────────────────────────────────
 //
 // steps[0] = consent   (1=agree, 2=decline) ← NEW gate
@@ -250,18 +310,21 @@ async function flowApplyLoan(
   const wallet = farmer?.wallet_address ?? undefined;
   const ref    = await createLoanApplication(phone, amount, wallet, {
     lenderName,
-    cropType:       cropLabel(cropType),
-    farmSize:       farmSizeLabel(farmSize),
-    livestock:      livestockLabel(livestock),
-    farmSizeChoice: farmSize,
+    cropType:        cropLabel(cropType),
+    farmSize:        farmSizeLabel(farmSize),
+    livestock:       livestockLabel(livestock),
+    farmSizeChoice:  farmSize,
     livestockChoice: livestock,
   });
 
-  // Push estimated risk score on-chain if farmer's wallet is linked
-  if (wallet) {
-    const score = estimateScore(farmSize, livestock);
-    submitRiskScoreOnChain(wallet, score).catch(console.error);
-  }
+  // ── On-chain registration + risk score (async — does not block USSD reply)
+  //
+  // 1. If the farmer has no on-chain account yet, call registerFarmer using a
+  //    server-generated custodial keypair funded by the oracle.  Phone hash is
+  //    used as national_id_hash so no PII lands on-chain.
+  // 2. Once the farmer PDA exists (new or pre-existing), submit the estimated
+  //    risk score via the oracle keypair and log both sigs in PostgreSQL.
+  registerAndScore({ phone, farmer, farmSize, livestock, ref }).catch(console.error);
 
   broadcast({
     type: 'loan_application',
